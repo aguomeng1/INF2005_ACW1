@@ -85,12 +85,11 @@ def encode_audio(audio_name, secret_data, selected_bits):
             else:
                 break
 
-    encoded_audio = wave.open('encoded_audio.wav', 'wb')
-    encoded_audio.setparams(audio.getparams())
-    encoded_audio.writeframes(frame_bytes)
+    with wave.open('encoded_audio.wav', 'wb') as encoded_audio:
+        encoded_audio.setparams(audio.getparams())
+        encoded_audio.writeframes(frame_bytes)
 
     audio.close()
-    encoded_audio.close()
 
 def decode_audio(audio_name, selected_bits):
     audio = wave.open(audio_name, mode='rb')
