@@ -1,0 +1,7 @@
+numpy==1.26.4
+opencv-python==4.9.0.80
+pillow==10.3.0
+pydub==0.25.1
+pygame==2.5.2
+tkinterdnd2==0.3.0
+
