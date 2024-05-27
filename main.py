@@ -6,7 +6,7 @@ from tkinter import *
 from tkinter import filedialog, messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from PIL import Image, ImageTk
-
+import base64
 
 def to_bin(data):
     """Convert `data` to binary format as string"""
@@ -19,43 +19,46 @@ def to_bin(data):
     else:
         raise TypeError("Type not supported.")
 
+
 def encode_image(image_name, secret_data, selected_bits):
-    image = cv2.imread(image_name)
-    n_bytes = (image.shape[0] * image.shape[1] * 3 * selected_bits) // 8
-    secret_data += "====="
+    image = cv2.imread(image_name) # read the image
+    n_bytes = (image.shape[0] * image.shape[1] * 3 * selected_bits) // 8 # maximum bytes to encode
+    secret_data += "=====" # add stopping criteria
     if len(secret_data) > n_bytes:
         raise ValueError("[!] Insufficient bytes, need bigger image or less data.")
 
     data_index = 0
-    binary_secret_data = to_bin(secret_data)
-    data_len = len(binary_secret_data)
+    binary_secret_data = to_bin(secret_data) # convert data to binary
+    data_len = len(binary_secret_data) # size of data to hide
 
     for row in image:
         for pixel in row:
-            r, g, b = to_bin(pixel[0]), to_bin(pixel[1]), to_bin(pixel[2])
+            r, g, b = to_bin(pixel) # convert RGB values to binary format
             if data_index < data_len:
-                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits], 2)
+                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits], 2)
+                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits], 2)
+                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
                 data_index += selected_bits
             if data_index >= data_len:
                 break
+        if data_index >= data_len:
+            break
     return image
 
 def decode_image(image_name, selected_bits):
-    print("[+] Decoding...")
     image = cv2.imread(image_name)
     binary_data = ""
     for row in image:
         for pixel in row:
-            r, g, b = to_bin(pixel[0]), to_bin(pixel[1]), to_bin(pixel[2])
-            binary_data += r[-selected_bits:]
-            binary_data += g[-selected_bits:]
-            binary_data += b[-selected_bits:]
+            r, g, b = to_bin(pixel)
+            binary_data += r[-selected_bits:][::-1]
+            binary_data += g[-selected_bits:][::-1]
+            binary_data += b[-selected_bits:][::-1]
+
     all_bytes = [binary_data[i: i+8] for i in range(0, len(binary_data), 8)]
     decoded_data = ""
     for byte in all_bytes:
@@ -80,6 +83,7 @@ def encode_audio(audio_name, secret_data, selected_bits):
     for i in range(len(frame_bytes)):
         for bit in range(selected_bits):
             if data_index < data_len:
+                #replace frame with secret data
                 frame_bytes[i] = (frame_bytes[i] & ~(1 << bit)) | (int(binary_secret_data[data_index]) << bit)
                 data_index += 1
             else:
