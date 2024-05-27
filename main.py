@@ -34,32 +34,33 @@ def encode_image(image_name, secret_data, selected_bits):
     for row in image:
         for pixel in row:
             r, g, b = to_bin(pixel) # convert RGB values to binary format
-            if data_index < data_len:
-                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
+            if data_index < data_len: # modify the least significant bit only if there is still data to store
+                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
+                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)
+                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
                 data_index += selected_bits
-            if data_index >= data_len:
+            if data_index >= data_len: # if data is encoded, just break out of the loop
                 break
         if data_index >= data_len:
             break
     return image
 
 def decode_image(image_name, selected_bits):
-    image = cv2.imread(image_name)
+    image = cv2.imread(image_name) # read the image
     binary_data = ""
     for row in image:
         for pixel in row:
             r, g, b = to_bin(pixel)
-            binary_data += r[-selected_bits:][::-1]
+            binary_data += r[-selected_bits:][::-1] #decode from lsb to msb
             binary_data += g[-selected_bits:][::-1]
             binary_data += b[-selected_bits:][::-1]
-
+    # split by 8-bits
     all_bytes = [binary_data[i: i+8] for i in range(0, len(binary_data), 8)]
+    # convert from bits to characters
     decoded_data = ""
     for byte in all_bytes:
         decoded_data += chr(int(byte, 2))
