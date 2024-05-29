@@ -19,6 +19,27 @@ def to_bin(data):
     else:
         raise TypeError("Type not supported.")
 
+#WHITESPACE ENCODING
+def encode_whitespace(cover_text, payload, marker="<<<hidden>>>"):
+    binary_payload = to_bin(payload)
+    whitespace_payload = ''.join(' ' if bit == '0' else '\t' for bit in binary_payload)
+    stego_text = cover_text + marker + whitespace_payload
+    return stego_text
+
+def decode_whitespace(stego_text, marker="<<<hidden>>>"):
+    if marker not in stego_text:
+        raise ValueError("Marker not found in the text.")
+    
+    parts = stego_text.split(marker)
+    if len(parts) != 2:
+        raise ValueError("Incorrect marker usage or multiple markers found.")
+    
+    whitespace_payload = parts[1]
+    binary_payload = ''.join('0' if char == ' ' else '1' for char in whitespace_payload)
+    text = ''.join(chr(int(binary_payload[i:i+8], 2)) for i in range(0, len(binary_payload), 8))
+    return text
+
+
 
 def encode_image(image_name, secret_data, selected_bits):
     image = cv2.imread(image_name) # read the image
@@ -166,7 +187,7 @@ class SteganographyApp:
         self.stego_image_label.grid(row=0, column=1, padx=10)
 
     def select_cover_file(self):
-        self.cover_file = filedialog.askopenfilename(title="Select Cover File", filetypes=(("Image files", "*.bmp;*.png;*.gif"), ("Audio files", "*.wav")))
+        self.cover_file = filedialog.askopenfilename(title="Select Cover File", filetypes=(("Image files", "*.bmp;*.png;*.gif"), ("Audio files", "*.wav"), ("Text files", "*.txt")))
         self.cover_label.config(text=self.cover_file)
 
         if self.cover_file.endswith(('bmp', 'png', 'gif')):
@@ -196,6 +217,14 @@ class SteganographyApp:
                 encode_audio(self.cover_file, secret_data, self.selected_bits.get())
                 messagebox.showinfo("Success", "Data encoded into audio and saved as 'encoded_audio.wav'.")
                 print(f"Encoded Audio Data: {secret_data}")
+            elif self.cover_file.endswith('txt'):
+                with open(self.cover_file, 'r') as file:
+                    cover_text = file.read()
+                stego_text = encode_whitespace(cover_text, secret_data)
+                with open('encoded_text.txt', 'w') as file:
+                    file.write(stego_text)
+                messagebox.showinfo("Success", "Data encoded into text and saved as 'encoded_text.txt'.")
+                print(f"Encoded Text Data: {secret_data}")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -209,6 +238,10 @@ class SteganographyApp:
                 decoded_data = decode_image(self.cover_file, self.selected_bits.get())
             elif self.cover_file.endswith('wav'):
                 decoded_data = decode_audio(self.cover_file, self.selected_bits.get())
+            elif self.cover_file.endswith('txt'):
+                with open(self.cover_file, 'r') as file:
+                    stego_text = file.read()
+                decoded_data = decode_whitespace(stego_text)    
             else:
                 raise ValueError("Unsupported file type.")
             messagebox.showinfo("Decoded Data", decoded_data)
