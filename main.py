@@ -175,7 +175,14 @@ class SteganographyApp:
 
         # Play Audio buttons
         Button(self.root, text="Play Cover Audio", command=self.play_cover_audio).pack(pady=5)
-        Button(self.root, text="Play Encoded Audio", command=self.play_encoded_audio).pack(pady=5)
+        Button(self.root, text="Play Current Encoded Audio", command=self.play_encoded_audio).pack(pady=5)
+
+        # Audio Selection
+        Button(self.root, text="Select Audio File", command=self.select_audio_file).pack(pady=5)
+        self.audio_file = None
+
+        # Play Selected Audio button
+        Button(self.root, text="Play Selected Audio", command=self.play_selected_audio).pack(pady=5)
 
         # Reset button
         Button(self.root, text="Reset", command=self.reset_state).pack(pady=5)
@@ -218,8 +225,8 @@ class SteganographyApp:
                 messagebox.showinfo("Success", f"Data encoded into image and saved as '{encoded_image_path}'.")
                 print(f"Encoded Image Data: {secret_data}")
             elif self.cover_file.endswith('wav'):
-                encoded_audio_path = encode_audio(self.cover_file, secret_data, self.selected_bits.get())
-                messagebox.showinfo("Success", f"Data encoded into audio and saved as '{encoded_audio_path}'.")
+                self.encoded_audio_path = encode_audio(self.cover_file, secret_data, self.selected_bits.get())
+                messagebox.showinfo("Success", f"Data encoded into audio and saved as '{self.encoded_audio_path}'.")
                 print(f"Encoded Audio Data: {secret_data}")
             elif self.cover_file.endswith('txt'):
                 with open(self.cover_file, 'r') as file:
@@ -277,12 +284,24 @@ class SteganographyApp:
         pygame.mixer.music.play()
 
     def play_encoded_audio(self):
-        encoded_audio_path = 'encoded_audio.wav'
-        if not encoded_audio_path:
+        if not self.encoded_audio_path:
             messagebox.showerror("Error", "No encoded audio found.")
             return
-        pygame.mixer.music.load(encoded_audio_path)
+        pygame.mixer.music.load(self.encoded_audio_path)
         pygame.mixer.music.play()
+
+    def select_audio_file(self):
+        self.audio_file = filedialog.askopenfilename(title="Select Audio File", filetypes=(("Audio files", "*.wav"),))
+        if self.audio_file:
+            messagebox.showinfo("Success", f"Audio file selected: {self.audio_file}")
+
+    def play_selected_audio(self):
+        if not self.audio_file:
+            messagebox.showerror("Error", "No audio file selected.")
+            return
+        pygame.mixer.music.load(self.audio_file)
+        pygame.mixer.music.play()
+
 
     def drop(self, event):
         dropped_file = event.data
