@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from PIL import Image, ImageTk
 import base64
+import time
 
 def to_bin(data):
     """Convert `data` to binary format as string"""
@@ -19,7 +20,7 @@ def to_bin(data):
     else:
         raise TypeError("Type not supported.")
 
-#WHITESPACE ENCODING
+# WHITESPACE ENCODING
 def encode_whitespace(cover_text, payload, marker="<<<hidden>>>"):
     binary_payload = to_bin(payload)
     whitespace_payload = ''.join(' ' if bit == '0' else '\t' for bit in binary_payload)
@@ -39,44 +40,42 @@ def decode_whitespace(stego_text, marker="<<<hidden>>>"):
     text = ''.join(chr(int(binary_payload[i:i+8], 2)) for i in range(0, len(binary_payload), 8))
     return text
 
-
-
 def encode_image(image_name, secret_data, selected_bits):
-    image = cv2.imread(image_name) # read the image
-    n_bytes = (image.shape[0] * image.shape[1] * 3 * selected_bits) // 8 # maximum bytes to encode
-    secret_data += "=====" # add stopping criteria
+    image = cv2.imread(image_name)  # read the image
+    n_bytes = (image.shape[0] * image.shape[1] * 3 * selected_bits) // 8  # maximum bytes to encode
+    secret_data += "====="  # add stopping criteria
     if len(secret_data) > n_bytes:
         raise ValueError("[!] Insufficient bytes, need bigger image or less data.")
 
     data_index = 0
-    binary_secret_data = to_bin(secret_data) # convert data to binary
-    data_len = len(binary_secret_data) # size of data to hide
+    binary_secret_data = to_bin(secret_data)  # convert data to binary
+    data_len = len(binary_secret_data)  # size of data to hide
 
     for row in image:
         for pixel in row:
-            r, g, b = to_bin(pixel) # convert RGB values to binary format
-            if data_index < data_len: # modify the least significant bit only if there is still data to store
-                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
+            r, g, b = to_bin(pixel)  # convert RGB values to binary format
+            if data_index < data_len:  # modify the least significant bit only if there is still data to store
+                pixel[0] = int(r[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)  # modify from lsb to msb
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
+                pixel[1] = int(g[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)  # modify from lsb to msb
                 data_index += selected_bits
             if data_index < data_len:
-                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2) #modify from lsb to msb
+                pixel[2] = int(b[:-selected_bits] + binary_secret_data[data_index:data_index+selected_bits][::-1], 2)  # modify from lsb to msb
                 data_index += selected_bits
-            if data_index >= data_len: # if data is encoded, just break out of the loop
+            if data_index >= data_len:  # if data is encoded, just break out of the loop
                 break
         if data_index >= data_len:
             break
     return image
 
 def decode_image(image_name, selected_bits):
-    image = cv2.imread(image_name) # read the image
+    image = cv2.imread(image_name)  # read the image
     binary_data = ""
     for row in image:
         for pixel in row:
             r, g, b = to_bin(pixel)
-            binary_data += r[-selected_bits:][::-1] #decode from lsb to msb
+            binary_data += r[-selected_bits:][::-1]  # decode from lsb to msb
             binary_data += g[-selected_bits:][::-1]
             binary_data += b[-selected_bits:][::-1]
     # split by 8-bits
@@ -105,17 +104,19 @@ def encode_audio(audio_name, secret_data, selected_bits):
     for i in range(len(frame_bytes)):
         for bit in range(selected_bits):
             if data_index < data_len:
-                #replace frame with secret data
+                # replace frame with secret data
                 frame_bytes[i] = (frame_bytes[i] & ~(1 << bit)) | (int(binary_secret_data[data_index]) << bit)
                 data_index += 1
             else:
                 break
 
-    with wave.open('encoded_audio.wav', 'wb') as encoded_audio:
+    encoded_audio_path = f'encoded_audio_{int(time.time())}.wav'
+    with wave.open(encoded_audio_path, 'wb') as encoded_audio:
         encoded_audio.setparams(audio.getparams())
         encoded_audio.writeframes(frame_bytes)
 
     audio.close()
+    return encoded_audio_path
 
 def decode_audio(audio_name, selected_bits):
     audio = wave.open(audio_name, mode='rb')
@@ -176,6 +177,9 @@ class SteganographyApp:
         Button(self.root, text="Play Cover Audio", command=self.play_cover_audio).pack(pady=5)
         Button(self.root, text="Play Encoded Audio", command=self.play_encoded_audio).pack(pady=5)
 
+        # Reset button
+        Button(self.root, text="Reset", command=self.reset_state).pack(pady=5)
+
         # Display area for images
         self.image_frame = Frame(self.root)
         self.image_frame.pack(pady=10)
@@ -208,25 +212,34 @@ class SteganographyApp:
         try:
             if self.cover_file.endswith(('bmp', 'png', 'gif')):
                 encoded_image = encode_image(self.cover_file, secret_data, self.selected_bits.get())
-                encoded_image_path = 'encoded_image.png'
+                encoded_image_path = f'encoded_image_{int(time.time())}.png'
                 cv2.imwrite(encoded_image_path, encoded_image)
                 self.display_image(encoded_image_path, self.stego_image_label)
-                messagebox.showinfo("Success", "Data encoded into image and saved as 'encoded_image.png'.")
+                messagebox.showinfo("Success", f"Data encoded into image and saved as '{encoded_image_path}'.")
                 print(f"Encoded Image Data: {secret_data}")
             elif self.cover_file.endswith('wav'):
-                encode_audio(self.cover_file, secret_data, self.selected_bits.get())
-                messagebox.showinfo("Success", "Data encoded into audio and saved as 'encoded_audio.wav'.")
+                encoded_audio_path = encode_audio(self.cover_file, secret_data, self.selected_bits.get())
+                messagebox.showinfo("Success", f"Data encoded into audio and saved as '{encoded_audio_path}'.")
                 print(f"Encoded Audio Data: {secret_data}")
             elif self.cover_file.endswith('txt'):
                 with open(self.cover_file, 'r') as file:
                     cover_text = file.read()
                 stego_text = encode_whitespace(cover_text, secret_data)
-                with open('encoded_text.txt', 'w') as file:
+                encoded_text_path = f'encoded_text_{int(time.time())}.txt'
+                with open(encoded_text_path, 'w') as file:
                     file.write(stego_text)
-                messagebox.showinfo("Success", "Data encoded into text and saved as 'encoded_text.txt'.")
+                messagebox.showinfo("Success", f"Data encoded into text and saved as '{encoded_text_path}'.")
                 print(f"Encoded Text Data: {secret_data}")
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
+    def reset_state(self):
+        self.cover_file = None
+        self.payload_file = None
+        self.cover_label.config(text="No file selected")
+        self.payload_label.config(text="No file selected")
+        self.cover_image_label.config(image='', text="Cover Image will appear here")
+        self.stego_image_label.config(image='', text="Stego Image will appear here")
 
     def decode(self):
         if not self.cover_file:
