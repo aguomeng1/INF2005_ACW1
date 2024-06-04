@@ -20,7 +20,7 @@ def to_bin(data):
     else:
         raise TypeError("Type not supported.")
 
-# WHITESPACE ENCODING
+#WHITESPACE ENCODING & DECODE
 def encode_whitespace(cover_text, payload, marker="<<<hidden>>>"):
     binary_payload = to_bin(payload)
     whitespace_payload = ''.join(' ' if bit == '0' else '\t' for bit in binary_payload)
@@ -40,6 +40,7 @@ def decode_whitespace(stego_text, marker="<<<hidden>>>"):
     text = ''.join(chr(int(binary_payload[i:i+8], 2)) for i in range(0, len(binary_payload), 8))
     return text
 
+#IMG ENCODE AND DECODE
 def encode_image(image_name, secret_data, selected_bits):
     image = cv2.imread(image_name)  # read the image
     n_bytes = (image.shape[0] * image.shape[1] * 3 * selected_bits) // 8  # maximum bytes to encode
@@ -88,6 +89,7 @@ def decode_image(image_name, selected_bits):
             break
     return decoded_data[:-5]
 
+#AUDIO ENCODE AND DECODE
 def encode_audio(audio_name, secret_data, selected_bits):
     audio = wave.open(audio_name, mode='rb')
     frame_bytes = bytearray(list(audio.readframes(audio.getnframes())))
@@ -137,6 +139,88 @@ def decode_audio(audio_name, selected_bits):
     audio.close()
     return decoded_data[:-5]
 
+#IMAGE PAYLOAD ENCODE AND DECODE
+def encode_image_with_image(cover_image_path, payload_image_path, selected_bits):
+    cover_image = cv2.imread(cover_image_path)  # read the image
+    n_bytes = (cover_image.shape[0] * cover_image.shape[1] * 3 * selected_bits) // 8
+    print(f"cover image binary data: {n_bytes}")
+
+    # Read the payload image and convert it to binary
+    payload_image = cv2.imread(payload_image_path)
+    payload_binary_data = ""
+    for row in payload_image:
+        for pixel in row:
+            r, g, b = to_bin(pixel[0]), to_bin(pixel[1]), to_bin(pixel[2])
+            payload_binary_data += r + g + b
+
+    # Convert the dimensions to binary and prepend them to the payload data
+    height, width, _ = payload_image.shape
+    dimension_data = f"{height:016b}{width:016b}"
+    payload_binary_data = dimension_data + payload_binary_data
+
+    # Print the payload binary data for comparison
+    print(f"Payload binary data: {payload_binary_data[:256]}...")
+    
+    #Check size
+    payload_length = len(payload_binary_data)
+    print(f"payload image binary data: {payload_length}")
+    if payload_length > n_bytes * 8:
+        raise ValueError("[!] Insufficient bytes, need a bigger cover image or smaller payload image.")
+    
+    data_index = 0
+    for row in cover_image:
+        for pixel in row:
+            r, g, b = to_bin(pixel[0]), to_bin(pixel[1]), to_bin(pixel[2])
+            if data_index < payload_length:
+                pixel[0] = int(r[:-selected_bits] + payload_binary_data[data_index:data_index+selected_bits], 2)
+                data_index += selected_bits
+            if data_index < payload_length:
+                pixel[1] = int(g[:-selected_bits] + payload_binary_data[data_index:data_index+selected_bits], 2)
+                data_index += selected_bits
+            if data_index < payload_length:
+                pixel[2] = int(b[:-selected_bits] + payload_binary_data[data_index:data_index+selected_bits], 2)
+                data_index += selected_bits
+            if data_index >= payload_length:
+                break
+        if data_index >= payload_length:
+            break
+
+    return cover_image
+
+def decode_image_with_image(encoded_image_path, selected_bits):
+    encoded_image = cv2.imread(encoded_image_path)  # read the encoded image
+
+    binary_data = ""
+    for row in encoded_image:
+        for pixel in row:
+            r, g, b = to_bin(pixel[0]), to_bin(pixel[1]), to_bin(pixel[2])
+            binary_data += r[-selected_bits:] + g[-selected_bits:] + b[-selected_bits:]
+    
+    # Extract the dimensions
+    height = int(binary_data[:16], 2)
+    width = int(binary_data[16:32], 2)
+    payload_length = height * width * 3 * 8
+    
+    # Extract the payload binary data
+    payload_binary_data = binary_data[32:32 + payload_length]
+    
+    # Convert binary data to bytes
+    all_bytes = [payload_binary_data[i:i+8] for i in range(0, len(payload_binary_data), 8)]
+    print(f"Payload data: {all_bytes}")
+
+    payload_data = bytearray([int(b, 2) for b in all_bytes])
+
+    # Print the payload data for comparison
+    
+    
+    # Convert the byte array to a numpy array and reshape it to the original payload image shape
+    payload_image = np.frombuffer(payload_data, dtype=np.uint8).reshape((height, width, 3))
+    
+    return payload_image
+
+
+
+
 class SteganographyApp:
     def __init__(self, root):
         self.root = root
@@ -148,6 +232,7 @@ class SteganographyApp:
         self.payload_file = None
         self.selected_bits = IntVar()
         self.selected_bits.set(1)
+        self.decode_image_with_image_toggle = BooleanVar()
 
         self.create_widgets()
         pygame.init()
@@ -172,6 +257,9 @@ class SteganographyApp:
         # Encode and Decode buttons
         Button(self.root, text="Encode", command=self.encode).pack(pady=5)
         Button(self.root, text="Decode", command=self.decode).pack(pady=5)
+
+        # Toggle for decode image with image payload
+        Checkbutton(self.root, text="Decode Image with Image Payload", variable=self.decode_image_with_image_toggle).pack(pady=5)
 
         # Play Audio buttons
         Button(self.root, text="Play Cover Audio", command=self.play_cover_audio).pack(pady=5)
@@ -205,7 +293,7 @@ class SteganographyApp:
             self.display_image(self.cover_file, self.cover_image_label)
 
     def select_payload_file(self):
-        self.payload_file = filedialog.askopenfilename(title="Select Payload File", filetypes=(("Text files", "*.txt"),))
+        self.payload_file = filedialog.askopenfilename(title="Select Payload File", filetypes=(("Text files", "*.txt"),("Image files", "*.png")))
         self.payload_label.config(text=self.payload_file)
 
     def encode(self):
@@ -213,32 +301,45 @@ class SteganographyApp:
             messagebox.showerror("Error", "Please select both cover and payload files.")
             return
 
-        with open(self.payload_file, 'r') as file:
-            secret_data = file.read()
-
         try:
-            if self.cover_file.endswith(('bmp', 'png', 'gif')):
+            if self.cover_file.endswith(('bmp', 'png', 'gif')) and self.payload_file.endswith('png'):
+                # Encode image with image payload
+                encoded_image = encode_image_with_image(self.cover_file, self.payload_file, self.selected_bits.get())
+                encoded_image_path = f'encoded_image_{int(time.time())}.png'
+                cv2.imwrite(encoded_image_path, encoded_image)
+                self.display_image(encoded_image_path, self.stego_image_label)
+                messagebox.showinfo("Success", f"Image payload encoded into image and saved as '{encoded_image_path}'.")
+            elif self.cover_file.endswith(('bmp', 'png', 'gif')):
+                # Encode image with text payload
+                with open(self.payload_file, 'r', encoding='utf-8', errors='ignore') as file:
+                    secret_data = file.read()
                 encoded_image = encode_image(self.cover_file, secret_data, self.selected_bits.get())
                 encoded_image_path = f'encoded_image_{int(time.time())}.png'
                 cv2.imwrite(encoded_image_path, encoded_image)
                 self.display_image(encoded_image_path, self.stego_image_label)
                 messagebox.showinfo("Success", f"Data encoded into image and saved as '{encoded_image_path}'.")
-                print(f"Encoded Image Data: {secret_data}")
             elif self.cover_file.endswith('wav'):
+                # Encode audio with text payload
+                with open(self.payload_file, 'r', encoding='utf-8', errors='ignore') as file:
+                    secret_data = file.read()
                 self.encoded_audio_path = encode_audio(self.cover_file, secret_data, self.selected_bits.get())
                 messagebox.showinfo("Success", f"Data encoded into audio and saved as '{self.encoded_audio_path}'.")
-                print(f"Encoded Audio Data: {secret_data}")
             elif self.cover_file.endswith('txt'):
-                with open(self.cover_file, 'r') as file:
+                # Encode text with text payload
+                with open(self.cover_file, 'r', encoding='utf-8', errors='ignore') as file:
                     cover_text = file.read()
+                with open(self.payload_file, 'r', encoding='utf-8', errors='ignore') as file:
+                    secret_data = file.read()
                 stego_text = encode_whitespace(cover_text, secret_data)
                 encoded_text_path = f'encoded_text_{int(time.time())}.txt'
-                with open(encoded_text_path, 'w') as file:
+                with open(encoded_text_path, 'w', encoding='utf-8', errors='ignore') as file:
                     file.write(stego_text)
                 messagebox.showinfo("Success", f"Data encoded into text and saved as '{encoded_text_path}'.")
-                print(f"Encoded Text Data: {secret_data}")
+            else:
+                messagebox.showerror("Error", "Unsupported file type combination.")
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
 
     def reset_state(self):
         self.cover_file = None
@@ -255,17 +356,30 @@ class SteganographyApp:
 
         try:
             if self.cover_file.endswith(('bmp', 'png', 'gif')):
-                decoded_data = decode_image(self.cover_file, self.selected_bits.get())
+                if self.decode_image_with_image_toggle.get():
+                    # Decode image with image payload
+                    decoded_image = decode_image_with_image(self.cover_file, self.selected_bits.get())
+                    decoded_image_path = f'decoded_payload_image_{int(time.time())}.png'
+                    cv2.imwrite(decoded_image_path, decoded_image)
+                    self.display_image(decoded_image_path, self.stego_image_label)
+                    messagebox.showinfo("Success", f"Image payload decoded from image and saved as '{decoded_image_path}'.")
+                else:
+                    # Decode image with text payload
+                    decoded_data = decode_image(self.cover_file, self.selected_bits.get())
+                    messagebox.showinfo("Decoded Data", decoded_data)
+                    print(f"Decoded Data: {decoded_data}")
             elif self.cover_file.endswith('wav'):
                 decoded_data = decode_audio(self.cover_file, self.selected_bits.get())
+                messagebox.showinfo("Decoded Data", decoded_data)
+                print(f"Decoded Data: {decoded_data}")
             elif self.cover_file.endswith('txt'):
                 with open(self.cover_file, 'r') as file:
                     stego_text = file.read()
-                decoded_data = decode_whitespace(stego_text)    
+                decoded_data = decode_whitespace(stego_text)
+                messagebox.showinfo("Decoded Data", decoded_data)
+                print(f"Decoded Data: {decoded_data}")
             else:
                 raise ValueError("Unsupported file type.")
-            messagebox.showinfo("Decoded Data", decoded_data)
-            print(f"Decoded Data: {decoded_data}")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
